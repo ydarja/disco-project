@@ -1,4 +1,4 @@
-file name,"segment, group",id,parent,relname,type,text
+file_name,segment_or_group,id,parent,relname,type,text
 GUM_conversation_christmas,segment,1,242,span,,That 's to Judy .
 GUM_conversation_christmas,segment,2,248,span,,You probably have one like it already .
 GUM_conversation_christmas,segment,3,249,restatement-repetition,,I do n't know .
