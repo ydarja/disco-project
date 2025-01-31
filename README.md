@@ -7,3 +7,5 @@
  - 23.12.2024: proposal submission (research question(s), datasets to use, proposed method(s), a plan of division of labor)
  - 20.01.2025: project presentation
  - 17.02.2025: final paper (4-8 pages, ACL style)
+
+**Overleaf template for writing:** https://www.overleaf.com/7156892639kgxrthxdwhcs#014394  
