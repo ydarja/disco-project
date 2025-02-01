@@ -13,16 +13,29 @@ from flair.embeddings import WordEmbeddings, FlairEmbeddings, CharacterEmbedding
 from flair.data import Token, Sentence
 from data_manager import load_data
 import matplotlib.pyplot as plt
-import gensim
 from gensim.models.keyedvectors import KeyedVectors
+from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
+import time
+import pickle
+import os
 
 glove_embeddings_cache = None
 
-def load_glove_embeddings(glove_file_path):
+
+glove_embeddings_cache = None
+
+def load_glove_embeddings(glove_file_path, cache_path="glove_cache.pkl"):
     global glove_embeddings_cache
-    if glove_embeddings_cache is None:
+    #  if cached file exists
+    if os.path.exists(cache_path):
+        print(f"Loading cached GloVe embeddings from {cache_path}...")
+        with open(cache_path, "rb") as f:
+            glove_embeddings_cache = pickle.load(f)
+    else:
         print(f"Loading GloVe embeddings from {glove_file_path}...")
         glove_embeddings_cache = KeyedVectors.load_word2vec_format(glove_file_path, binary=False, no_header=True)
+        with open(cache_path, "wb") as f:
+            pickle.dump(glove_embeddings_cache, f)
     return glove_embeddings_cache
 
 def get_combined_embeddings(batch, glove_embeddings, flair_embeddings, char_embeddings):
@@ -97,7 +110,6 @@ class Decoder(nn.Module):
         self.lstm = nn.LSTM(input_size=hidden_dim * 2, hidden_size=hidden_dim, batch_first=True)
         self.fc = nn.Linear(hidden_dim, output_dim)
         self.dropout = nn.Dropout(dropout_rate)
-        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, encoder_outputs):
         # Decoder uses the encoder outputs directly (no need to manage hidden states manually)
@@ -108,9 +120,6 @@ class Decoder(nn.Module):
         
         # Linear transformation to output space
         output = self.fc(lstm_out)
-
-        # Apply softmax activation (if needed)
-        output = self.softmax(output)
         
         return output
 
@@ -148,8 +157,12 @@ class Baseline(nn.Module):
 def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num_epochs, device):
     train_losses = []
     val_losses = []
+    epoch_times = []  # to store epoch durations
+
+    total_start_time = time.time()
 
     for epoch in range(num_epochs):
+        epoch_start_time = time.time()
         model.train()
         total_train_loss = 0
 
@@ -158,8 +171,8 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
             sentences = [item[0] for item in batch]
             labels = [item[1] for item in batch]
 
-            # Move labels to the device
-            labels = torch.tensor(labels).to(device)
+            # Move labels to the device (ensure dtype is long for CrossEntropyLoss)
+            labels = torch.tensor(labels, dtype=torch.long).to(device)
 
             # Forward pass
             optimizer.zero_grad()
@@ -172,19 +185,25 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
 
             total_train_loss += loss.item()
 
-        # Average training loss
+        # Average training loss for this epoch
         avg_train_loss = total_train_loss / len(train_dataloader)
         train_losses.append(avg_train_loss)
 
         # Evaluate on validation set
-        val_loss, val_accuracy = evaluate_model(model, val_dataloader, loss_fn, device)
+        val_loss, val_accuracy, _, _, _ = evaluate_model(model, val_dataloader, loss_fn, device)
         val_losses.append(val_loss)
 
-        print(f"Epoch [{epoch+1}/{num_epochs}], "
-              f"Train Loss: {avg_train_loss:.4f}, "
-              f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}")
+        epoch_time = time.time() - epoch_start_time
+        epoch_times.append(epoch_time)
+        elapsed_time = time.time() - total_start_time
+        estimated_total = (elapsed_time / (epoch + 1)) * num_epochs
+        remaining_time = estimated_total - elapsed_time
 
-    # Plot validation loss
+        print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {avg_train_loss:.4f}, "
+              f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}, "
+              f"Epoch Time: {epoch_time:.2f} sec, Remaining: {remaining_time/60:.2f} min")
+
+    # Plot validation and training loss
     plt.figure(figsize=(8, 6))
     plt.plot(range(1, num_epochs + 1), val_losses, label="Validation Loss", marker="o")
     plt.plot(range(1, num_epochs + 1), train_losses, label="Training Loss", marker="o")
@@ -193,34 +212,60 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
     plt.title("Training and Validation Loss")
     plt.legend()
     plt.grid()
-    plt.show()
+    plot_name = "baseline_val_loss1"
+    plt.savefig(f'plots/{plot_name}.png')
+    plt.close()
 
+
+def save_model(model, path="baseline_model.pth"):
+    """Save the trained model."""
+    torch.save(model.state_dict(), path)
+    print(f"Model saved to {path}")
+
+def load_model(model, path="baseline_model.pth"):
+    """Load a trained model."""
+    model.load_state_dict(torch.load(path))
+    model.eval()
+    print(f"Model loaded from {path}")
 
 def evaluate_model(model, dataloader, loss_fn, device):
+    """Evaluate the model on validation or test data."""
     model.eval()
     total_loss = 0
     correct = 0
     total = 0
+    all_preds = []
+    all_labels = []
 
     with torch.no_grad():
         for batch in dataloader:
             sentences = [item[0] for item in batch]
             labels = [item[1] for item in batch]
-
             labels = torch.tensor(labels).to(device)
             outputs = model(sentences)
-
             loss = loss_fn(outputs, labels)
             total_loss += loss.item()
-
             _, predicted = torch.max(outputs, 1)
             correct += (predicted == labels).sum().item()
             total += labels.size(0)
+            all_preds.extend(predicted.cpu().numpy())
+            all_labels.extend(labels.cpu().numpy())
 
-    average_loss = total_loss / len(dataloader)
     accuracy = correct / total
-    return average_loss, accuracy
+    precision = precision_score(all_labels, all_preds, average='weighted')
+    recall = recall_score(all_labels, all_preds, average='weighted')
+    f1 = f1_score(all_labels, all_preds, average='weighted')
+    report = classification_report(all_labels, all_preds)
 
+    return total_loss / len(dataloader), accuracy, precision, recall, f1, report
+
+def test_model(model, test_dataloader, loss_fn, device):
+    """Test the model and print evaluation metrics."""
+    test_loss, test_acc, test_prec, test_rec, test_f1, report = evaluate_model(model, test_dataloader, loss_fn, device)
+    print(f"Test Loss: {test_loss:.4f}, Test Accuracy: {test_acc:.4f}")
+    print(f"Test Precision: {test_prec:.4f}, Test Recall: {test_rec:.4f}, Test F1-score: {test_f1:.4f}")
+    print("\nClassification Report (per label):")
+    print(report)
 
 def main():
     embedding_dim = 2448  # Adjust based on the dimensions of GloVe, FLAIR, and character embeddings
@@ -228,7 +273,7 @@ def main():
     output_dim = 32  # Number of classes
     dropout_rate = 0.3
     batch_size = 8
-    learning_rate = 1e-3
+    learning_rate = 1e-4
     num_epochs = 10
 
     # Device configuration
@@ -252,8 +297,18 @@ def main():
     
     train_dataloader = load_data('data/train', 'relations.csv', batch_size=batch_size)
     val_dataloader = load_data('data/dev', 'relations.csv', batch_size=batch_size)
+    test_dataloader = load_data('data/test', 'relations.csv', batch_size=batch_size)
+    
     # Train the model
     train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num_epochs, device)
+
+    save_model(model)
+
+    # Load the model for testing
+    load_model(model)
+
+    # Evaluate on test data
+    test_model(model, test_dataloader, loss_fn, device)
 
 if __name__ == "__main__":
     main()
