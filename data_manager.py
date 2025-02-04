@@ -82,7 +82,7 @@ def rsd_file_paths_to_dict(rsd_file_paths):
         edu_pairs = []
 
         for i in range(len(ids)):
-            if relations[i][-1] == 't' and parents[i] in ids:
+            if relations[i][-1] == 'r' and parents[i] in ids:
                 edu_pairs.append([['<s>'] + texts[i].split(' ') + ['<sep>'] + texts[ids.index(parents[i])].split(' ') + ['<n>'], relations[i][:-2]])
             elif relations[i][-1] == 'm' and parents[i] in ids:
                 edu_pairs.append([['<n>'] + texts[i].split(' ') + ['<sep>'] + texts[ids.index(parents[i])].split(' ') + ['<n>'], relations[i][:-2]])
@@ -98,7 +98,7 @@ def rsd_file_paths_to_dict(rsd_file_paths):
 
         elif file_genre in ['academic', 'bio', 'textbook', 'voyage']:
             group_genre_file_dict['science'][file_genre][file_name] = edu_pairs
-            
+       
     return group_genre_file_dict
 
 
@@ -249,7 +249,7 @@ def main():
 
     rsd_file_paths = list_rsd_file_paths('data/train')
 
-    group_genre_file_dict = rsd_file_paths_to_dict(rsd_file_paths)
+    group_genre_file_dict = rsd_file_paths_to_dict(rsd_file_paths)  
 
     verbal_group_genre_file_dict(group_genre_file_dict)
 
