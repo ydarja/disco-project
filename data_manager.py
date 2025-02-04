@@ -34,7 +34,7 @@ def list_rsd_file_paths(directory):
 
 
 
-def rsd_file_paths_to_dict(rsd_file_paths):
+def rsd_file_paths_to_dict(rsd_file_paths, fine_grained=True):
 
     group_genre_file_dict = {
         'conversational':{
@@ -57,6 +57,8 @@ def rsd_file_paths_to_dict(rsd_file_paths):
         }
     }
 
+    labels = []
+
     for file_path in rsd_file_paths:
 
         ids = []
@@ -65,14 +67,16 @@ def rsd_file_paths_to_dict(rsd_file_paths):
         relations = []
 
         with open(file_path, 'r', encoding='utf-8') as file: 
-            reader = csv.reader(file, delimiter='\t') 
-    
-            for row in reader:
+            for line in file:
+
+                row = line.split('\t')
+
                 try:
                     ids.append(int(row[0]))
                     texts.append(row[1])
                     parents.append(int(row[6]))
                     relations.append(row[7])
+
                 except IndexError: 
                     print(f"Skipping row with insufficient columns in file: {file_path}")
                     ids = ids[:len(relations)]
@@ -83,9 +87,26 @@ def rsd_file_paths_to_dict(rsd_file_paths):
 
         for i in range(len(ids)):
             if relations[i][-1] == 'r' and parents[i] in ids:
-                edu_pairs.append([['<s>'] + texts[i].split(' ') + ['<sep>'] + texts[ids.index(parents[i])].split(' ') + ['<n>'], relations[i][:-2]])
+
+                edu_text = ['<s>'] + texts[i].split(' ') + ['<sep>'] + texts[ids.index(parents[i])].split(' ') + ['<n>']
+
+                if fine_grained:
+                    edu_pairs.append([edu_text, relations[i][:-2]])
+                    labels.append(relations[i][:-2])
+                else: # coarse
+                    edu_pairs.append([edu_text, relations[i][:relations[i].rfind('-')] if relations[i].find('same') else relations[i][:-2]])
+                    labels.append(relations[i][:relations[i].rfind('-')] if relations[i].find('same') else relations[i][:-2])
+
             elif relations[i][-1] == 'm' and parents[i] in ids:
-                edu_pairs.append([['<n>'] + texts[i].split(' ') + ['<sep>'] + texts[ids.index(parents[i])].split(' ') + ['<n>'], relations[i][:-2]])
+                edu_text = ['<n>'] + texts[i].split(' ') + ['<sep>'] + texts[ids.index(parents[i])].split(' ') + ['<n>']
+
+                if fine_grained:
+                    edu_pairs.append([edu_text, relations[i][:-2]])
+                    labels.append(relations[i][:-2])
+                else: # coarse
+                    edu_pairs.append([edu_text, relations[i][:relations[i].rfind('-')] if relations[i].find('same') else relations[i][:-2]])
+                    labels.append(relations[i][:relations[i].rfind('-')] if relations[i].find('same') else relations[i][:-2])
+                    
 
         file_genre = file_path[file_path.find('_')+1:file_path.rfind('_')]
         file_name = file_path[file_path.rfind('_')+1:file_path.find('.')]
@@ -99,7 +120,7 @@ def rsd_file_paths_to_dict(rsd_file_paths):
         elif file_genre in ['academic', 'bio', 'textbook', 'voyage']:
             group_genre_file_dict['science'][file_genre][file_name] = edu_pairs
        
-    return group_genre_file_dict
+    return group_genre_file_dict, set(labels)
 
 
 def verbal_group_genre_file_dict(group_genre_file_dict):
