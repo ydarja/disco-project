@@ -39,23 +39,31 @@ def list_rsd_file_paths(directory):
 def rsd_file_paths_to_dict(rsd_file_paths, fine_grained=True):
 
     group_genre_file_dict = {
-        'conversational':{
-            'conversation':{},
+        'cluster0':{
+            'bio':{},
+            'fiction':{}
+        },
+        'cluster1':{
+            'academic':{},
             'interview':{},
+            'letter':{},
+            'news':{},
+            'speech':{},
+            'textbook':{},
+            'voyage':{}
+        },
+        'cluster2':{
+            'conversation':{},
+        },
+        'cluster3':{
+            'court':{},
+            'essay':{},
+            'podcast':{},
             'reddit':{},
             'vlog':{}
         },
-        'prose':{
-            'fiction':{},
-            'news':{},
-            'speech':{},
+        'cluster4':{
             'whow':{}
-        },
-        'science':{
-            'academic':{},
-            'bio':{},
-            'textbook':{},
-            'voyage':{}
         }
     }
 
@@ -109,18 +117,32 @@ def rsd_file_paths_to_dict(rsd_file_paths, fine_grained=True):
                     edu_pairs.append([edu_text, relations[i][:relations[i].rfind('-')] if relations[i].find('same') else relations[i][:-2]])
                     labels.append(relations[i][:relations[i].rfind('-')] if relations[i].find('same') else relations[i][:-2])
                     
+        if file_path.find('/') >= 0:
+            shortened_file_path = file_path[file_path.rfind('/')+1:]
+            file_genre = shortened_file_path[shortened_file_path.find('_')+1:shortened_file_path.rfind('_')]
+            file_document = shortened_file_path[shortened_file_path.rfind('_')+1:shortened_file_path.find('.')]
+        else:
+            file_genre = file_path[file_path.find('_')+1:file_path.rfind('_')]
+            file_document = file_path[file_path.rfind('_')+1:file_path.find('.')]
 
-        file_genre = file_path[file_path.find('_')+1:file_path.rfind('_')]
-        file_name = file_path[file_path.rfind('_')+1:file_path.find('.')]
 
-        if file_genre in ['conversation', 'interview', 'reddit', 'vlog']:
-            group_genre_file_dict['conversational'][file_genre][file_name] = edu_pairs
+        if file_genre in ['bio', 'fiction']:
+            group_genre_file_dict['cluster0'][file_genre][file_document] = edu_pairs
             
-        elif file_genre in ['fiction', 'news', 'speech', 'whow']:
-            group_genre_file_dict['prose'][file_genre][file_name] = edu_pairs
+        elif file_genre in ['academic', 'interview', 'letter', 'news', 'speech', 'textbook', 'voyage']:
+            group_genre_file_dict['cluster1'][file_genre][file_document] = edu_pairs
 
-        elif file_genre in ['academic', 'bio', 'textbook', 'voyage']:
-            group_genre_file_dict['science'][file_genre][file_name] = edu_pairs
+        elif file_genre in ['conversation']:
+            group_genre_file_dict['cluster2'][file_genre][file_document] = edu_pairs
+
+        elif file_genre in ['court', 'essay', 'podcast', 'reddit', 'vlog']:
+            group_genre_file_dict['cluster3'][file_genre][file_document] = edu_pairs
+        
+        elif file_genre in ['whow']:
+            group_genre_file_dict['cluster4'][file_genre][file_document] = edu_pairs
+
+        else:
+            print(f"{file_document} of {file_genre} could not be assigned to the output dictionary!")
        
     return group_genre_file_dict, set(labels)
 
@@ -140,7 +162,7 @@ def verbal_group_genre_file_dict(group_genre_file_dict):
 
 
 
-def load_data(directory, batch_size=8):
+def load_data(directory, batch_size=8, cluster_group = 'all'):
     """
     Load data, process it, and return a DataLoader for training.
     """
@@ -150,10 +172,11 @@ def load_data(directory, batch_size=8):
 
     # Flatten the data into a list of EDU pairs and relations for training
     edu_pairs_list = []
-    for genre in group_genre_file_dict.values():
-        for sub_genre in genre.values():
-            for file_data in sub_genre.values():
-                edu_pairs_list.extend(file_data)
+    considered_clusters = ['cluster0', 'cluster1', 'cluster2', 'cluster3', 'cluster4'] if cluster_group == 'all' else [cluster_group]
+    for cluster in considered_clusters:
+        for genre in group_genre_file_dict[cluster].values():
+            for document in genre.values():
+                edu_pairs_list.extend(document)
 
     # Prepare the data: EDU pairs and label indices
     data = [
