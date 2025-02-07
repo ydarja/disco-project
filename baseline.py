@@ -22,8 +22,6 @@ import os
 glove_embeddings_cache = None
 
 
-glove_embeddings_cache = None
-
 def load_glove_embeddings(glove_file_path, cache_path="glove_cache.pkl"):
     global glove_embeddings_cache
     #  if cached file exists
@@ -38,7 +36,7 @@ def load_glove_embeddings(glove_file_path, cache_path="glove_cache.pkl"):
             pickle.dump(glove_embeddings_cache, f)
     return glove_embeddings_cache
 
-def get_combined_embeddings(batch, glove_embeddings, flair_embeddings, char_embeddings):
+def get_combined_embeddings(batch, glove_embeddings, flair_embeddings, char_embeddings, device):
     """
     Generate combined token-level embeddings for a batch of sentences using GloVe, FLAIR, and character embeddings.
 
@@ -47,6 +45,7 @@ def get_combined_embeddings(batch, glove_embeddings, flair_embeddings, char_embe
         glove_embeddings: GloVe embeddings object (Gensim's KeyedVectors or similar).
         flair_embeddings: FLAIR WordEmbeddings object for token-level embeddings.
         char_embeddings: Character embedding object.
+        device: The device to move all tensors to (CPU or CUDA).
 
     Returns:
         List of tensors, where each tensor represents a sentence's combined embeddings
@@ -58,6 +57,7 @@ def get_combined_embeddings(batch, glove_embeddings, flair_embeddings, char_embe
         token_embeddings = []
 
         # Create a FLAIR Sentence object for the entire sentence
+        #TODO ???
         flair_sentence = Sentence(" ".join(sentence))
 
         # Embed the sentence using FLAIR embeddings
@@ -65,21 +65,21 @@ def get_combined_embeddings(batch, glove_embeddings, flair_embeddings, char_embe
 
         for i, word in enumerate(sentence):
             # GloVe embeddings
-            if word in glove_embeddings:
-                glove_embedding = torch.tensor(glove_embeddings[word], dtype=torch.float)
+            if word in glove_embeddings.key_to_index:
+                glove_embedding = torch.tensor(glove_embeddings[word], dtype=torch.float).to(device)
             else:
-                glove_embedding = torch.zeros(300)  # Assuming GloVe embedding dimension is 300
+                glove_embedding = torch.zeros(300).to(device)
 
             # FLAIR embeddings (already embedded at the token level)
-            flair_embedding = flair_sentence.tokens[i].embedding
+            flair_embedding = flair_sentence.tokens[i].embedding.to(device)
 
             # Character embeddings
             if hasattr(char_embeddings, "get_item_vector"):
                 # If character embeddings provide a method to fetch embeddings for a word
-                char_embedding = torch.tensor(char_embeddings.get_item_vector(word), dtype=torch.float)
+                char_embedding = torch.tensor(char_embeddings.get_item_vector(word), dtype=torch.float).to(device)
             else:
                 # If character embeddings are not available or not implemented
-                char_embedding = torch.zeros(100)  # Adjust the dimension as per your character embeddings
+                char_embedding = torch.zeros(100).to(device)  # Adjust the dimension as per your character embeddings
 
             # Combine token embeddings
             combined_token_embedding = torch.cat([glove_embedding, flair_embedding, char_embedding], dim=0)
@@ -124,13 +124,14 @@ class Decoder(nn.Module):
         return output
 
 class Baseline(nn.Module):
-    def __init__(self, glove_embeddings, flair_embeddings, char_embeddings, encoder, decoder):
+    def __init__(self, glove_embeddings, flair_embeddings, char_embeddings, encoder, decoder, device):
         super(Baseline, self).__init__()
         self.glove_embeddings = glove_embeddings
         self.flair_embeddings = flair_embeddings
         self.char_embeddings = char_embeddings
         self.encoder = encoder
         self.decoder = decoder
+        self.device = device
 
     def forward(self, batch):
         """
@@ -138,9 +139,10 @@ class Baseline(nn.Module):
         and pass them through the encoder-decoder architecture.
         """
         # Generate combined embeddings for the batch using the provided function
-        combined_embeddings = get_combined_embeddings(batch, self.glove_embeddings, self.flair_embeddings, self.char_embeddings)
+        combined_embeddings = get_combined_embeddings(batch, self.glove_embeddings, self.flair_embeddings, self.char_embeddings, self.device)
 
         # Pad sequences to have uniform lengths for batch processing
+        #TODO max_length?
         padded_embeddings = pad_sequence(combined_embeddings, batch_first=True)  # Shape: [batch_size, max_seq_len, embedding_dim]
 
         # Pass through Encoder
@@ -190,7 +192,7 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
         train_losses.append(avg_train_loss)
 
         # Evaluate on validation set
-        val_loss, val_accuracy, _, _, _ = evaluate_model(model, val_dataloader, loss_fn, device)
+        val_loss, val_accuracy, _, _, _, _ = evaluate_model(model, val_dataloader, loss_fn, device)
         val_losses.append(val_loss)
 
         epoch_time = time.time() - epoch_start_time
@@ -212,17 +214,17 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
     plt.title("Training and Validation Loss")
     plt.legend()
     plt.grid()
-    plot_name = "baseline_val_loss1"
+    plot_name = "baseline_val_loss_coarse"
     plt.savefig(f'plots/{plot_name}.png')
     plt.close()
 
 
-def save_model(model, path="baseline_model.pth"):
+def save_model(model, path="baseline_model_coarse.pth"):
     """Save the trained model."""
     torch.save(model.state_dict(), path)
     print(f"Model saved to {path}")
 
-def load_model(model, path="baseline_model.pth"):
+def load_model(model, path="baseline_model_coarse.pth"):
     """Load a trained model."""
     model.load_state_dict(torch.load(path))
     model.eval()
@@ -241,7 +243,7 @@ def evaluate_model(model, dataloader, loss_fn, device):
         for batch in dataloader:
             sentences = [item[0] for item in batch]
             labels = [item[1] for item in batch]
-            labels = torch.tensor(labels).to(device)
+            labels = torch.tensor(labels, dtype=torch.long, device=device)
             outputs = model(sentences)
             loss = loss_fn(outputs, labels)
             total_loss += loss.item()
@@ -268,9 +270,10 @@ def test_model(model, test_dataloader, loss_fn, device):
     print(report)
 
 def main():
+    #TODO what happens with the emb length?
     embedding_dim = 2448  # Adjust based on the dimensions of GloVe, FLAIR, and character embeddings
     hidden_dim = 128
-    output_dim = 32  # Number of classes
+    output_dim = 15  # Number of classes
     dropout_rate = 0.3
     batch_size = 8
     learning_rate = 1e-4
@@ -282,22 +285,22 @@ def main():
     # Initialize embeddings
     glove_embeddings = load_glove_embeddings("glove.42B.300d.txt")  # Load GloVe embeddings (e.g., using Gensim KeyedVectors)
     flair_embeddings = FlairEmbeddings("news-forward")  # Token-level FLAIR embeddings
-    char_embeddings = CharacterEmbeddings()  # Load character embeddings (e.g., from AllenNLP or custom)
+    char_embeddings = CharacterEmbeddings() # Load character embeddings (e.g., from AllenNLP or custom)
 
     # Initialize Encoder and Decoder
     encoder = Encoder(embedding_dim=embedding_dim, hidden_dim=hidden_dim, dropout_rate=dropout_rate).to(device)
     decoder = Decoder(hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
 
     # Initialize Baseline model
-    model = Baseline(glove_embeddings, flair_embeddings, char_embeddings, encoder, decoder).to(device)
+    model = Baseline(glove_embeddings, flair_embeddings, char_embeddings, encoder, decoder, device).to(device)
 
     # Loss function and optimizer
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
-    train_dataloader = load_data('data/train', 'relations.csv', batch_size=batch_size)
-    val_dataloader = load_data('data/dev', 'relations.csv', batch_size=batch_size)
-    test_dataloader = load_data('data/test', 'relations.csv', batch_size=batch_size)
+    train_dataloader = load_data('data/train', batch_size=batch_size)
+    val_dataloader = load_data('data/dev', batch_size=batch_size)
+    test_dataloader = load_data('data/test', batch_size=batch_size)
     
     # Train the model
     train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num_epochs, device)

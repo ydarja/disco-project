@@ -12,6 +12,8 @@ import os
 import csv
 import shutil
 from torch.utils.data import Dataset, DataLoader
+from collections import Counter
+
 # from flair.data import Sentence
 
 # List all files in the given directory with the .rsd extension
@@ -138,23 +140,13 @@ def verbal_group_genre_file_dict(group_genre_file_dict):
 
 
 
-def load_labels(csv_file):
-    """
-    Load the label map from a CSV file and return it as a dictionary.
-    """
-    with open(csv_file, mode='r') as file:
-        reader = csv.reader(file)
-        next(reader)  # Skip header
-        label_map = {row[0].lower(): idx for idx, row in enumerate(reader)}
-    return label_map
-
-
-def load_data(directory, csv_file, batch_size=8):
+def load_data(directory, batch_size=8):
     """
     Load data, process it, and return a DataLoader for training.
     """
     rsd_file_paths = list_rsd_file_paths(directory)
-    group_genre_file_dict = rsd_file_paths_to_dict(rsd_file_paths)
+    group_genre_file_dict, labels = rsd_file_paths_to_dict(rsd_file_paths, False)
+    label_map = {value: idx for idx, value in enumerate(sorted(labels))}
 
     # Flatten the data into a list of EDU pairs and relations for training
     edu_pairs_list = []
@@ -163,18 +155,14 @@ def load_data(directory, csv_file, batch_size=8):
             for file_data in sub_genre.values():
                 edu_pairs_list.extend(file_data)
 
-    # Load the label map
-    label_map = load_labels(csv_file)
-
     # Prepare the data: EDU pairs and label indices
     data = [
-        (edu_pair, label_map.get(relation.lower(), 0))
+        (edu_pair, label_map.get(relation.lower(), 42))
         for edu_pair, relation in edu_pairs_list
     ]
 
     # Create the DataLoader
     dataloader = DataLoader(data, batch_size=batch_size, shuffle=True, collate_fn=lambda x: x)
-
     return dataloader
 
 # organize files in the directories according to the standard train/dev/test splits
@@ -270,9 +258,11 @@ def main():
 
     rsd_file_paths = list_rsd_file_paths('data/train')
 
-    group_genre_file_dict = rsd_file_paths_to_dict(rsd_file_paths)  
+    group_genre_file_dict, relations = rsd_file_paths_to_dict(rsd_file_paths)  
 
-    verbal_group_genre_file_dict(group_genre_file_dict)
+    #verbal_group_genre_file_dict(group_genre_file_dict)
+
+    load_data('data/train')
 
     #organize_splits()
 
