@@ -9,3 +9,4 @@
  - 17.02.2025: final paper (4-8 pages, ACL style)
 
 **Overleaf template for writing:** https://www.overleaf.com/7156892639kgxrthxdwhcs#014394  
+**Excel table for results:** https://docs.google.com/spreadsheets/d/1NCJh5BHctQUtRghe6AkCyE5OlfGpSEksLl2pZMMp1Cg/edit?usp=sharing
