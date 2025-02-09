@@ -2,14 +2,13 @@
 
 """ 
 Title: Leveraging attention in discourse classification for genre diverse data
-Description: Reads rs4 files. Outputs a data frame for processing down the line
+Description: Reads rsd files. Outputs a dictionary for processing down the line
 Author: Darja Jepifanova, Marco Floess
-Date: 2025-02-xx
+Date: 2025-02-17
 """ 
 
 # Import necessary modules 
 import os
-import csv
 import shutil
 from torch.utils.data import Dataset, DataLoader
 from collections import Counter
@@ -151,14 +150,14 @@ def verbal_group_genre_file_dict(group_genre_file_dict):
 
     print("############################################################")
     print("Currently this parsing functionality outputs a dictionary of the structure:")
-    print("\{Group:\{Genre:\{File:[EDU_Pairs]\}\}\}")
+    print("\{Group:\{Genre:\{Document:[EDU_Pairs]\}\}\}")
 
     print(f"This implementation groups genres into {len(group_genre_file_dict.keys())} groups: {group_genre_file_dict.keys()}")
 
     for group_name, group_genre_dict in group_genre_file_dict.items():
         for genre_name, genre_file_dict in group_genre_dict.items():
-            for file_name, edu_pairs in genre_file_dict.items():
-                print(f"Group: {group_name}, Genre: {genre_name}, File: {file_name}, RelationCount: {len(edu_pairs)}")
+            for document_name, edu_pairs in genre_file_dict.items():
+                print(f"Group: {group_name}, Genre: {genre_name}, Document: {document_name}, RelationCount: {len(edu_pairs)}")
 
 
 
