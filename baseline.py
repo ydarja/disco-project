@@ -12,12 +12,15 @@ from torch.nn.utils.rnn import pad_sequence
 from flair.embeddings import WordEmbeddings, FlairEmbeddings, CharacterEmbeddings, StackedEmbeddings
 from flair.data import Token, Sentence
 from data_manager import load_data
+import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
 from gensim.models.keyedvectors import KeyedVectors
 from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
 import time
 import pickle
 import os
+import pandas as pd
 
 glove_embeddings_cache = None
 
@@ -214,17 +217,30 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
     plt.title("Training and Validation Loss")
     plt.legend()
     plt.grid()
-    plot_name = "baseline_val_loss_coarse"
+    plot_name = "baseline_val_loss_fine1"
     plt.savefig(f'plots/{plot_name}.png')
     plt.close()
 
 
-def save_model(model, path="baseline_model_coarse.pth"):
+def plot_confusion_matrix(y_true, y_pred):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", xticklabels=True, yticklabels=True)
+    plt.xlabel("Predicted Label")
+    plt.ylabel("True Label")
+    plt.title("Confusion Matrix")
+    plot_name = "baseline_confusion_fine"
+    plt.savefig(f'plots/{plot_name}.png')
+    plt.close()
+
+
+
+def save_model(model, path="baseline_model_fine1.pth"):
     """Save the trained model."""
     torch.save(model.state_dict(), path)
     print(f"Model saved to {path}")
 
-def load_model(model, path="baseline_model_coarse.pth"):
+def load_model(model, path="baseline_model_fine1.pth"):
     """Load a trained model."""
     model.load_state_dict(torch.load(path))
     model.eval()
@@ -258,6 +274,7 @@ def evaluate_model(model, dataloader, loss_fn, device):
     recall = recall_score(all_labels, all_preds, average='weighted')
     f1 = f1_score(all_labels, all_preds, average='weighted')
     report = classification_report(all_labels, all_preds)
+    plot_confusion_matrix(all_labels, all_preds)
 
     return total_loss / len(dataloader), accuracy, precision, recall, f1, report
 
@@ -273,7 +290,7 @@ def main():
     #TODO what happens with the emb length?
     embedding_dim = 2448  # Adjust based on the dimensions of GloVe, FLAIR, and character embeddings
     hidden_dim = 128
-    output_dim = 15  # Number of classes
+    output_dim = 32  # Number of classes
     dropout_rate = 0.3
     batch_size = 8
     learning_rate = 1e-4
@@ -298,9 +315,9 @@ def main():
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
-    train_dataloader = load_data('data/train', batch_size=batch_size)
-    val_dataloader = load_data('data/dev', batch_size=batch_size)
-    test_dataloader = load_data('data/test', batch_size=batch_size)
+    train_dataloader, _ = load_data('data/train', batch_size=batch_size)
+    val_dataloader, _ = load_data('data/dev', batch_size=batch_size)
+    test_dataloader, _ = load_data('data/test', batch_size=batch_size)
     
     # Train the model
     train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num_epochs, device)

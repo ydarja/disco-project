@@ -5,7 +5,9 @@ from torch.utils.data import DataLoader, Dataset
 from transformers import T5EncoderModel, T5Tokenizer
 from data_manager import load_data
 from sklearn.metrics import precision_score, recall_score, f1_score, classification_report
+import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.metrics import confusion_matrix
 import time
 
 class T5DiscourseClassifier(nn.Module):
@@ -33,10 +35,11 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
         total_train_loss = 0
 
         for batch in train_dataloader:
-            texts = [" ".join(tokens) for tokens, _ in batch]    # Extract concatenated text
+            # concatenate text
+            texts = [" ".join(tokens) for tokens, _ in batch]   
             labels = torch.tensor([label for _, label in batch], dtype=torch.long).to(device) # Labels as tensor
 
-            # Tokenize inputs (assuming a tokenizer is defined)
+            # tokenize inputs 
             encoding = model.tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
             input_ids = encoding["input_ids"].to(device)
             attention_mask = encoding["attention_mask"].to(device)
@@ -64,7 +67,7 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
               f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}, "
               f"Epoch Time: {epoch_time:.2f} sec, Remaining: {remaining_time/60:.2f} min")
 
-    # Save loss plot
+    # loss plot
     plt.figure(figsize=(8, 6))
     plt.plot(range(1, num_epochs + 1), val_losses, label="Validation Loss", marker="o")
     plt.plot(range(1, num_epochs + 1), train_losses, label="Training Loss", marker="o")
@@ -73,14 +76,26 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
     plt.title("Training and Validation Loss")
     plt.legend()
     plt.grid()
-    plt.savefig('plots/t5_val_loss_coarse.png')
+    plt.savefig('plots/t5_val_loss_fine1.png')
     plt.close()
 
-def save_model(model, path="t5_model_coarse.pth"):
+# confusion matrix for a detailed error analysis
+def plot_confusion_matrix(y_true, y_pred):
+    cm = confusion_matrix(y_true, y_pred)
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues",  xticklabels=True, yticklabels=True)
+    plt.xlabel("Predicted Label")
+    plt.ylabel("True Label")
+    plt.title("Confusion Matrix")
+    plot_name = "t5_confusion"
+    plt.savefig(f'plots/{plot_name}.png')
+    plt.close()
+
+def save_model(model, path="t5_model_fine1.pth"):
     torch.save(model.state_dict(), path)
     print(f"Model saved to {path}")
 
-def load_model(model, path="t5_model_coarse.pth"):
+def load_model(model, path="t5_model_fine1.pth"):
     model.load_state_dict(torch.load(path))
     model.eval()
     print(f"Model loaded from {path}")
@@ -92,10 +107,10 @@ def evaluate_model(model, dataloader, loss_fn, device):
     total = 0
     all_preds = []
     all_labels = []
-
+    
     with torch.no_grad():
         for batch in dataloader:
-            texts = [" ".join(tokens) for tokens, _ in batch]  # Convert tokens back into a sentence
+            texts = [" ".join(tokens) for tokens, _ in batch]  
             labels = torch.tensor([label for _, label in batch], dtype=torch.long).to(device)
 
             encoding = model.tokenizer(texts, padding=True, truncation=True, return_tensors="pt")
@@ -116,6 +131,7 @@ def evaluate_model(model, dataloader, loss_fn, device):
     recall = recall_score(all_labels, all_preds, average='weighted')
     f1 = f1_score(all_labels, all_preds, average='weighted')
     report = classification_report(all_labels, all_preds)
+    plot_confusion_matrix(all_labels, all_preds)
 
     return total_loss / len(dataloader), accuracy, precision, recall, f1, report
 
@@ -127,44 +143,36 @@ def test_model(model, test_dataloader, loss_fn, device):
     print(report)
 
 
-# Main script
 def main():
-    # Define training parameters
     batch_size = 8
     epochs = 10
     learning_rate = 2e-5
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model_name = "t5-small"
 
-    # Load tokenizer
     tokenizer = T5Tokenizer.from_pretrained(model_name)
 
-    # Load data
+    # load data
     train_data = load_data('data/train', batch_size=batch_size)
     val_data = load_data('data/dev', batch_size=batch_size)
-    test_data = load_data('data/test', batch_size=batch_size)
+    considered_clusters = ['cluster0', 'cluster1', 'cluster2', 'cluster3', 'cluster4']
+    test_sets = {cluster: load_data(f'data/test', batch_size=batch_size, cluster_group=cluster) for cluster in considered_clusters}
 
-
-    # Initialize model
-    num_labels = 15
+    num_labels = 32
     tokenizer = T5Tokenizer.from_pretrained("t5-small")
     model = T5DiscourseClassifier(model_name, num_labels=num_labels, tokenizer=tokenizer).to(device)
 
-    # Define loss function and optimizer
     loss_fn = torch.nn.CrossEntropyLoss()
     optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
     
-
-    # Train model
+    # train model
     train_model(model, train_data, val_data, loss_fn, optimizer, epochs, device)
-
-    # Save trained model
     save_model(model, path="t5_model.pth")
 
-    # Evaluate model on test set
     print("Evaluating on test set...")
-    test_model(model, test_data, loss_fn, device)
-
+    for cluster, test_data in test_sets.items():
+        print(f"\nEvaluating on {cluster}...")
+        test_model(model, test_data, loss_fn, device)
 
 if __name__ == "__main__":
     main()
