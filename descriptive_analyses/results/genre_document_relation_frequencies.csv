@@ -1,0 +1,17 @@
+genre,train: documents #,train: relations #,dev: documents #,dev: relations #,test: documents #,test: relations #
+academic,14,1514,2,202,2,247
+bio,16,1697,2,174,2,180
+conversation,10,2075,2,430,2,340
+court,4,656,1,128,1,94
+essay,3,370,1,171,1,146
+fiction,15,1969,2,224,2,262
+interview,15,1998,2,186,2,207
+letter,4,562,1,109,1,103
+news,19,1356,2,202,2,198
+podcast,3,517,1,186,1,109
+reddit,14,1729,2,261,3,388
+speech,11,1463,2,254,2,182
+textbook,11,1569,2,190,2,253
+vlog,11,1922,2,277,2,222
+voyage,14,1470,2,155,2,149
+whow,15,1944,2,214,2,221
