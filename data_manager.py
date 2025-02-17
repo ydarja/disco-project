@@ -36,11 +36,11 @@ def list_rsd_file_paths(directory):
 def rsd_file_paths_to_dict(rsd_file_paths, fine_grained=True):
 
     group_genre_file_dict = {
-        'cluster0':{
+        'Professional':{
             'bio':{},
             'fiction':{}
         },
-        'cluster1':{
+        'Storytelling':{
             'academic':{},
             'interview':{},
             'letter':{},
@@ -49,17 +49,17 @@ def rsd_file_paths_to_dict(rsd_file_paths, fine_grained=True):
             'textbook':{},
             'voyage':{}
         },
-        'cluster2':{
+        'Converstional':{
             'conversation':{},
         },
-        'cluster3':{
+        'Casual':{
             'court':{},
             'essay':{},
             'podcast':{},
             'reddit':{},
             'vlog':{}
         },
-        'cluster4':{
+        'Instructional':{
             'whow':{}
         }
     }
@@ -124,38 +124,24 @@ def rsd_file_paths_to_dict(rsd_file_paths, fine_grained=True):
 
 
         if file_genre in ['bio', 'fiction']:
-            group_genre_file_dict['cluster0'][file_genre][file_document] = edu_pairs
+            group_genre_file_dict['Professional'][file_genre][file_document] = edu_pairs
             
         elif file_genre in ['academic', 'interview', 'letter', 'news', 'speech', 'textbook', 'voyage']:
-            group_genre_file_dict['cluster1'][file_genre][file_document] = edu_pairs
+            group_genre_file_dict['Storytelling'][file_genre][file_document] = edu_pairs
 
         elif file_genre in ['conversation']:
-            group_genre_file_dict['cluster2'][file_genre][file_document] = edu_pairs
+            group_genre_file_dict['Conversational'][file_genre][file_document] = edu_pairs
 
         elif file_genre in ['court', 'essay', 'podcast', 'reddit', 'vlog']:
-            group_genre_file_dict['cluster3'][file_genre][file_document] = edu_pairs
+            group_genre_file_dict['Casual'][file_genre][file_document] = edu_pairs
         
         elif file_genre in ['whow']:
-            group_genre_file_dict['cluster4'][file_genre][file_document] = edu_pairs
+            group_genre_file_dict['Instructional'][file_genre][file_document] = edu_pairs
 
         else:
             print(f"{file_document} of {file_genre} could not be assigned to the output dictionary!")
        
     return group_genre_file_dict, set(labels)
-
-
-def verbal_group_genre_file_dict(group_genre_file_dict):
-
-    print("############################################################")
-    print("Currently this parsing functionality outputs a dictionary of the structure:")
-    print("\{Group:\{Genre:\{Document:[EDU_Pairs]\}\}\}")
-
-    print(f"This implementation groups genres into {len(group_genre_file_dict.keys())} groups: {group_genre_file_dict.keys()}")
-
-    for group_name, group_genre_dict in group_genre_file_dict.items():
-        for genre_name, genre_file_dict in group_genre_dict.items():
-            for document_name, edu_pairs in genre_file_dict.items():
-                print(f"Group: {group_name}, Genre: {genre_name}, Document: {document_name}, RelationCount: {len(edu_pairs)}")
 
 
 
@@ -169,7 +155,7 @@ def load_data(directory, batch_size=8, cluster_group = 'all'):
 
     # Flatten the data into a list of EDU pairs and relations for training
     edu_pairs_list = []
-    considered_clusters = ['cluster0', 'cluster1', 'cluster2', 'cluster3', 'cluster4'] if cluster_group == 'all' else [cluster_group]
+    considered_clusters = ['Professional', 'Storytelling', 'Conversational', 'Casual', 'Instructional'] if cluster_group == 'all' else [cluster_group]
     for cluster in considered_clusters:
         for genre in group_genre_file_dict[cluster].values():
             for document in genre.values():
@@ -280,8 +266,6 @@ def main():
 
     group_genre_file_dict, relations = rsd_file_paths_to_dict(rsd_file_paths)  
 
-    #verbal_group_genre_file_dict(group_genre_file_dict)
-
     dataloader = load_data('data/train', batch_size=8, cluster_group='all')
 
     print("Sample EDU Pairs and Their Labels:\n")
@@ -293,7 +277,7 @@ def main():
             print("-" * 50)
         break
 
-    #organize_splits()
+    # organize_splits()
 
 
 
