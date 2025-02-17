@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*- 
 
 """ 
-Title: Leveraging attention in discourse classification for genre diverse data
+Title: Enhancing Discourse Relation Classification with Attention Mechanisms on
+Genre-Diverse Data
 Description: Reads rsd files. Outputs a dictionary for processing down the line
 Author: Darja Jepifanova, Marco Floess
 Date: 2025-02-17
 """ 
 
-# Import necessary modules 
 import os
 import shutil
-from torch.utils.data import Dataset, DataLoader
-from collections import Counter
+from torch.utils.data import DataLoader
 
-# from flair.data import Sentence
 
 # List all files in the given directory with the .rsd extension
 def list_rsd_file_paths(directory): 
@@ -166,7 +164,7 @@ def load_data(directory, batch_size=8, cluster_group = 'all'):
     Load data, process it, and return a DataLoader for training.
     """
     rsd_file_paths = list_rsd_file_paths(directory)
-    group_genre_file_dict, labels = rsd_file_paths_to_dict(rsd_file_paths, False)
+    group_genre_file_dict, labels = rsd_file_paths_to_dict(rsd_file_paths,fine_grained=True)
     label_map = {value: idx for idx, value in enumerate(sorted(labels))}
 
     # Flatten the data into a list of EDU pairs and relations for training
@@ -284,7 +282,16 @@ def main():
 
     #verbal_group_genre_file_dict(group_genre_file_dict)
 
-    load_data('data/train')
+    dataloader = load_data('data/train', batch_size=8, cluster_group='all')
+
+    print("Sample EDU Pairs and Their Labels:\n")
+    for i, batch in enumerate(dataloader):
+        for edu_pair, label in batch[:5]:  
+            print(f"Example {i+1}:")
+            print(f"EDU Pair: {edu_pair}")
+            print(f"Label: {label}")
+            print("-" * 50)
+        break
 
     #organize_splits()
 

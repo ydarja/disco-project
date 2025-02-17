@@ -1,7 +1,13 @@
+""" 
+Title: Enhancing Discourse Relation Classification with Attention Mechanisms on
+Genre-Diverse Data
+Description: T5-small model for RST discourse relation 
+classification
+Author: Darja Jepifanova, Marco Floess
+Date: 2025-02-17
+""" 
 import torch
 import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader, Dataset
 from transformers import T5EncoderModel, T5Tokenizer
 from data_manager import load_data
 from sklearn.metrics import precision_score, recall_score, f1_score, classification_report

@@ -1,16 +1,18 @@
 """ 
-Title: Leveraging attention in discourse classification for genre diverse data
-Description: Reads rs4 files. Outputs a data frame for processing down the line
+Title: Enhancing Discourse Relation Classification with Attention Mechanisms on
+Genre-Diverse Data
+Description: Baseline bidirectinal LSTM model for RST discourse relation 
+classification, following the setup by Zeldes&Liu (2020)
 Author: Darja Jepifanova, Marco Floess
-Date: 2025-02-xx
+Date: 2025-02-17
 """ 
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.utils.rnn import pad_sequence
-from flair.embeddings import WordEmbeddings, FlairEmbeddings, CharacterEmbeddings, StackedEmbeddings
-from flair.data import Token, Sentence
+from flair.embeddings import  FlairEmbeddings, CharacterEmbeddings, StackedEmbeddings
+from flair.data import Sentence
 from data_manager import load_data
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -20,7 +22,6 @@ from sklearn.metrics import precision_score, recall_score, f1_score, classificat
 import time
 import pickle
 import os
-import pandas as pd
 
 glove_embeddings_cache = None
 
@@ -40,55 +41,36 @@ def load_glove_embeddings(glove_file_path, cache_path="glove_cache.pkl"):
     return glove_embeddings_cache
 
 def get_combined_embeddings(batch, glove_embeddings, flair_embeddings, char_embeddings, device):
-    """
-    Generate combined token-level embeddings for a batch of sentences using GloVe, FLAIR, and character embeddings.
-
-    Args:
-        batch: List of tokenized sentences (list of lists of words).
-        glove_embeddings: GloVe embeddings object (Gensim's KeyedVectors or similar).
-        flair_embeddings: FLAIR WordEmbeddings object for token-level embeddings.
-        char_embeddings: Character embedding object.
-        device: The device to move all tensors to (CPU or CUDA).
-
-    Returns:
-        List of tensors, where each tensor represents a sentence's combined embeddings
-        (shape: [sentence_length, combined_embedding_dim]).
-    """
     combined_embeddings = []
 
     for sentence in batch:
         token_embeddings = []
 
-        # Create a FLAIR Sentence object for the entire sentence
-        #TODO ???
         flair_sentence = Sentence(" ".join(sentence))
 
-        # Embed the sentence using FLAIR embeddings
         flair_embeddings.embed(flair_sentence)
 
         for i, word in enumerate(sentence):
-            # GloVe embeddings
+            # 3. GloVe embeddings
             if word in glove_embeddings.key_to_index:
                 glove_embedding = torch.tensor(glove_embeddings[word], dtype=torch.float).to(device)
             else:
                 glove_embedding = torch.zeros(300).to(device)
 
-            # FLAIR embeddings (already embedded at the token level)
+            # 2. FLAIR embeddings 
             flair_embedding = flair_sentence.tokens[i].embedding.to(device)
 
-            # Character embeddings
+            # 3. character embeddings
             if hasattr(char_embeddings, "get_item_vector"):
-                # If character embeddings provide a method to fetch embeddings for a word
                 char_embedding = torch.tensor(char_embeddings.get_item_vector(word), dtype=torch.float).to(device)
             else:
-                # If character embeddings are not available or not implemented
-                char_embedding = torch.zeros(100).to(device)  # Adjust the dimension as per your character embeddings
+                # unknwon char
+                char_embedding = torch.zeros(100).to(device)  
 
-            # Combine token embeddings
             combined_token_embedding = torch.cat([glove_embedding, flair_embedding, char_embedding], dim=0)
             token_embeddings.append(combined_token_embedding)
 
-        # Stack all token embeddings for the sentence
+        # stack all token embeddings for the sentence
         sentence_embedding = torch.stack(token_embeddings, dim=0)
         combined_embeddings.append(sentence_embedding)
 
@@ -109,19 +91,13 @@ class Encoder(nn.Module):
 class Decoder(nn.Module):
     def __init__(self, hidden_dim, output_dim, dropout_rate=0.3):
         super(Decoder, self).__init__()
-        # Define the LSTM as unidirectional (no bidirectional needed)
         self.lstm = nn.LSTM(input_size=hidden_dim * 2, hidden_size=hidden_dim, batch_first=True)
         self.fc = nn.Linear(hidden_dim, output_dim)
         self.dropout = nn.Dropout(dropout_rate)
 
     def forward(self, encoder_outputs):
-        # Decoder uses the encoder outputs directly (no need to manage hidden states manually)
         lstm_out, _ = self.lstm(encoder_outputs)
-        
-        # Apply dropout
         lstm_out = self.dropout(lstm_out)
-        
-        # Linear transformation to output space
         output = self.fc(lstm_out)
         
         return output
@@ -137,32 +113,22 @@ class Baseline(nn.Module):
         self.device = device
 
     def forward(self, batch):
-        """
-        For each batch, generate combined embeddings using GloVe, FLAIR, and character embeddings,
-        and pass them through the encoder-decoder architecture.
-        """
-        # Generate combined embeddings for the batch using the provided function
+        # combined embeddings 
         combined_embeddings = get_combined_embeddings(batch, self.glove_embeddings, self.flair_embeddings, self.char_embeddings, self.device)
 
-        # Pad sequences to have uniform lengths for batch processing
-        #TODO max_length?
-        padded_embeddings = pad_sequence(combined_embeddings, batch_first=True)  # Shape: [batch_size, max_seq_len, embedding_dim]
+        # padding
+        padded_embeddings = pad_sequence(combined_embeddings, batch_first=True)  
 
-        # Pass through Encoder
         encoder_outputs, hidden = self.encoder(padded_embeddings)
-
-        # Pass through Decoder
         probs = self.decoder(encoder_outputs)
-
-        # Take the last output of the sequence (assuming the model is trying to predict a single class label)
-        probs = probs[:, -1, :]  # Shape: [batch_size, num_classes]
+        probs = probs[:, -1, :]  
 
         return probs
 
 def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num_epochs, device):
     train_losses = []
     val_losses = []
-    epoch_times = []  # to store epoch durations
+    epoch_times = []  
 
     total_start_time = time.time()
 
@@ -172,29 +138,23 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
         total_train_loss = 0
 
         for batch in train_dataloader:
-            # Unpack the batch
+
             sentences = [item[0] for item in batch]
             labels = [item[1] for item in batch]
-
-            # Move labels to the device (ensure dtype is long for CrossEntropyLoss)
             labels = torch.tensor(labels, dtype=torch.long).to(device)
 
-            # Forward pass
             optimizer.zero_grad()
             outputs = model(sentences)
             loss = loss_fn(outputs, labels)
 
-            # Backpropagation
             loss.backward()
             optimizer.step()
-
             total_train_loss += loss.item()
 
-        # Average training loss for this epoch
         avg_train_loss = total_train_loss / len(train_dataloader)
         train_losses.append(avg_train_loss)
 
-        # Evaluate on validation set
+        # evaluate on validation set
         val_loss, val_accuracy, _, _, _, _ = evaluate_model(model, val_dataloader, loss_fn, device)
         val_losses.append(val_loss)
 
@@ -208,7 +168,7 @@ def train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num
               f"Val Loss: {val_loss:.4f}, Val Accuracy: {val_accuracy:.4f}, "
               f"Epoch Time: {epoch_time:.2f} sec, Remaining: {remaining_time/60:.2f} min")
 
-    # Plot validation and training loss
+    # plot validation and training loss
     plt.figure(figsize=(8, 6))
     plt.plot(range(1, num_epochs + 1), val_losses, label="Validation Loss", marker="o")
     plt.plot(range(1, num_epochs + 1), train_losses, label="Training Loss", marker="o")
@@ -232,8 +192,6 @@ def plot_confusion_matrix(y_true, y_pred):
     plot_name = "baseline_confusion_fine"
     plt.savefig(f'plots/{plot_name}.png')
     plt.close()
-
-
 
 def save_model(model, path="baseline_model_fine1.pth"):
     """Save the trained model."""
@@ -287,48 +245,44 @@ def test_model(model, test_dataloader, loss_fn, device):
     print(report)
 
 def main():
-    #TODO what happens with the emb length?
-    embedding_dim = 2448  # Adjust based on the dimensions of GloVe, FLAIR, and character embeddings
+    embedding_dim = 2448  
     hidden_dim = 128
-    output_dim = 32  # Number of classes
+    output_dim = 32  # number of classes
     dropout_rate = 0.3
     batch_size = 8
     learning_rate = 1e-4
     num_epochs = 10
 
-    # Device configuration
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # Initialize embeddings
-    glove_embeddings = load_glove_embeddings("glove.42B.300d.txt")  # Load GloVe embeddings (e.g., using Gensim KeyedVectors)
-    flair_embeddings = FlairEmbeddings("news-forward")  # Token-level FLAIR embeddings
-    char_embeddings = CharacterEmbeddings() # Load character embeddings (e.g., from AllenNLP or custom)
+    # initialize embeddings
+    glove_embeddings = load_glove_embeddings("glove.42B.300d.txt")  
+    flair_embeddings = FlairEmbeddings("news-forward")
+    char_embeddings = CharacterEmbeddings() 
 
-    # Initialize Encoder and Decoder
+    # encoder and decoder
     encoder = Encoder(embedding_dim=embedding_dim, hidden_dim=hidden_dim, dropout_rate=dropout_rate).to(device)
     decoder = Decoder(hidden_dim=hidden_dim, output_dim=output_dim, dropout_rate=dropout_rate).to(device)
 
-    # Initialize Baseline model
     model = Baseline(glove_embeddings, flair_embeddings, char_embeddings, encoder, decoder, device).to(device)
 
-    # Loss function and optimizer
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     
     train_dataloader, _ = load_data('data/train', batch_size=batch_size)
     val_dataloader, _ = load_data('data/dev', batch_size=batch_size)
-    test_dataloader, _ = load_data('data/test', batch_size=batch_size)
-    
-    # Train the model
+    considered_clusters = ['cluster0', 'cluster1', 'cluster2', 'cluster3', 'cluster4']
+    test_sets = {cluster: load_data(f'data/test', batch_size=batch_size, cluster_group=cluster) for cluster in considered_clusters}
+
+    # Train the model, save it and load for the evaluation
     train_model(model, train_dataloader, val_dataloader, loss_fn, optimizer, num_epochs, device)
-
     save_model(model)
-
-    # Load the model for testing
     load_model(model)
 
-    # Evaluate on test data
-    test_model(model, test_dataloader, loss_fn, device)
+    print("Evaluating on test set...")
+    for cluster, test_data in test_sets.items():
+        print(f"\nEvaluating on {cluster}...")
+        test_model(model, test_data, loss_fn, device)
 
 if __name__ == "__main__":
     main()
